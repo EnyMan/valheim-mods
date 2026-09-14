@@ -1,6 +1,6 @@
 {
     "name": "Weather_Altar",
-    "version_number": "1.0.1",
+    "version_number": "1.0.2",
     "website_url": "https://github.com/EnyMan/valheim-mods/tree/main/weather_altar",
     "description": "Build a Weather Altar and pay coins and blood to change the weather worldwide for a limited time. Solo and co-op friendly; server-synced settings.",
     "dependencies": [

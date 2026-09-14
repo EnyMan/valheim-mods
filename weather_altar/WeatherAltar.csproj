@@ -5,7 +5,7 @@
     <LangVersion>10</LangVersion>
     <RootNamespace>WeatherAltar</RootNamespace>
     <AssemblyName>WeatherAltar</AssemblyName>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <Nullable>disable</Nullable>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Deterministic>true</Deterministic>

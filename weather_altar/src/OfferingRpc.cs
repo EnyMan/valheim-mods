@@ -66,8 +66,6 @@ namespace WeatherAltar
         private static bool _paid;
         private static OfferingFailure _failure = OfferingFailure.None;
 
-        public static bool HasPending => _pendingRequestId != 0L && !_outcomeRecorded;
-
         public static void Register()
         {
             NetworkManager nm = NetworkManager.Instance;
@@ -112,7 +110,16 @@ namespace WeatherAltar
 
         private static bool IsLocal(long target) => ZNet.instance != null && target == ZNet.GetUID();
 
-        private static bool IsServerOrigin(long sender) => sender == ServerTarget() || sender == ZNet.GetUID();
+        private static bool IsServerOrigin(long sender)
+        {
+            if (sender == ServerTarget() || sender == ZNet.GetUID())
+            {
+                return true;
+            }
+
+            Jotunn.Logger.LogWarning($"Weather Altar: ignored packet from non-server peer {sender} (server is {ServerTarget()}).");
+            return false;
+        }
 
         private static ZPackage Rewind(ZPackage package)
         {
@@ -132,10 +139,17 @@ namespace WeatherAltar
             try
             {
                 worldUid = package.ReadLong();
-                return worldUid == ZNet.instance.GetWorldUID();
+                if (worldUid == ZNet.instance.GetWorldUID())
+                {
+                    return true;
+                }
+
+                Jotunn.Logger.LogWarning($"Weather Altar: ignored packet for world {worldUid} (this world is {ZNet.instance.GetWorldUID()}).");
+                return false;
             }
-            catch (Exception)
+            catch (Exception e)
             {
+                Jotunn.Logger.LogWarning($"Weather Altar: ignored malformed packet: {e.Message}");
                 return false;
             }
         }
@@ -219,6 +233,7 @@ namespace WeatherAltar
 
             _pendingRequestId = _nextRequestId++;
             _pendingAltarId = altar.GetZDOID();
+            _outcomeRecorded = false;
             _paid = false;
             _failure = OfferingFailure.None;
 
@@ -650,7 +665,9 @@ namespace WeatherAltar
                 return;
             }
 
-            bool isReceipt = receiptPeer == ZNet.GetUID() && receiptRequest == _pendingRequestId && !_outcomeRecorded;
+            // The client has normally already recorded its own outcome (it paid before
+            // reporting), so the receipt must not depend on _outcomeRecorded.
+            bool isReceipt = _pendingRequestId != 0L && receiptPeer == ZNet.GetUID() && receiptRequest == _pendingRequestId;
             if (isReceipt)
             {
                 RecordOutcome(true, OfferingFailure.None);
@@ -699,7 +716,8 @@ namespace WeatherAltar
                 ? (OfferingFailure)failureByte
                 : OfferingFailure.InvalidRequest;
 
-            if (requestId == _pendingRequestId && !_outcomeRecorded)
+            // Rejections also arrive after a local failure was already recorded and reported.
+            if (_pendingRequestId != 0L && requestId == _pendingRequestId)
             {
                 RecordOutcome(false, failure);
                 _pendingRequestId = 0L;
