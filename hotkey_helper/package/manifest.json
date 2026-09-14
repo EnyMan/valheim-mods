@@ -1,0 +1,9 @@
+{
+    "name": "Hotkey_Helper",
+    "version_number": "1.0.0",
+    "website_url": "https://github.com/EnyMan/valheim-mods/tree/main/hotkey_helper",
+    "description": "Shows your mods' hotkeys in the vanilla key hint panels when they matter (building, combat, inventory, containers, fishing). Hold Alt+H to list every mod hotkey.",
+    "dependencies": [
+        "denikson-BepInExPack_Valheim-5.4.2350"
+    ]
+}

@@ -1,0 +1,13 @@
+bin/
+obj/
+.vs/
+dist/
+*.zip
+*~
+*.user
+# third-party mods kept locally for reference only (not ours to publish)
+references/
+simple_compas/nordguide_port/
+Gemini_Generated_Image_*
+# not part of this repo yet
+weather_altar/

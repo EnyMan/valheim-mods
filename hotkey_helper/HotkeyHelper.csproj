@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>10</LangVersion>
+    <RootNamespace>HotkeyHelper</RootNamespace>
+    <AssemblyName>HotkeyHelper</AssemblyName>
+    <Version>1.0.0</Version>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Deterministic>true</Deterministic>
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <VALHEIM_INSTALL Condition="'$(VALHEIM_INSTALL)' == ''"></VALHEIM_INSTALL>
+    <BEPINEX_PATH Condition="'$(BEPINEX_PATH)' == ''"></BEPINEX_PATH>
+    <VALHEIM_MANAGED>$(VALHEIM_INSTALL)\valheim_Data\Managed</VALHEIM_MANAGED>
+  </PropertyGroup>
+
+  <Target Name="CheckGamePaths" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="'$(VALHEIM_INSTALL)' == ''" Text="VALHEIM_INSTALL is not set. Example: -p:VALHEIM_INSTALL=...\steamapps\common\Valheim" />
+    <Error Condition="'$(BEPINEX_PATH)' == ''" Text="BEPINEX_PATH is not set. Example: -p:BEPINEX_PATH=&quot;...\profiles\YourProfile\BepInEx&quot;" />
+    <Error Condition="!Exists('$(VALHEIM_MANAGED)\assembly_valheim.dll')" Text="assembly_valheim.dll not found under $(VALHEIM_MANAGED). Check VALHEIM_INSTALL." />
+    <Error Condition="!Exists('$(BEPINEX_PATH)\core\BepInEx.dll')" Text="BepInEx.dll not found under $(BEPINEX_PATH)\core. Check BEPINEX_PATH." />
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="assembly_valheim"><HintPath>$(VALHEIM_MANAGED)\assembly_valheim.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="assembly_utils"><HintPath>$(VALHEIM_MANAGED)\assembly_utils.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="assembly_guiutils"><HintPath>$(VALHEIM_MANAGED)\assembly_guiutils.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.TextMeshPro"><HintPath>$(VALHEIM_MANAGED)\Unity.TextMeshPro.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(VALHEIM_MANAGED)\UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(VALHEIM_MANAGED)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>$(VALHEIM_MANAGED)\UnityEngine.UI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UIModule"><HintPath>$(VALHEIM_MANAGED)\UnityEngine.UIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.TextRenderingModule"><HintPath>$(VALHEIM_MANAGED)\UnityEngine.TextRenderingModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(VALHEIM_MANAGED)\UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BepInEx"><HintPath>$(BEPINEX_PATH)\core\BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(BEPINEX_PATH)\core\0Harmony.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+</Project>

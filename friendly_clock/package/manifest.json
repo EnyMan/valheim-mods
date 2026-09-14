@@ -1,0 +1,9 @@
+{
+    "name": "Friendly_Clock",
+    "version_number": "1.0.0",
+    "website_url": "https://github.com/EnyMan/valheim-mods/tree/main/friendly_clock",
+    "description": "An immersive day/night dial clock with time-of-day words instead of exact time. Optional day counter. Hand-painted art, draggable, client-side.",
+    "dependencies": [
+        "denikson-BepInExPack_Valheim-5.4.2350"
+    ]
+}
