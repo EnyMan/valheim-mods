@@ -241,8 +241,10 @@ namespace WeatherAltar
                 return;
             }
 
-            OfferingRpc.RequestOffering(_altar, _selected);
+            // Set before sending: on host/solo the whole exchange (incl. OnFailure/OnReceipt) runs synchronously inside RequestOffering.
             _awaitingServer = true;
+            SetErrorText("");
+            OfferingRpc.RequestOffering(_altar, _selected);
             RefreshLabels();
         }
 

@@ -13,7 +13,7 @@ namespace SimpleCompass
     {
         public const string PluginGuid = "com.mous.simplecompass";
         public const string PluginName = "Simple Compass";
-        public const string PluginVersion = "1.0.0";
+        public const string PluginVersion = "1.0.1";
 
         private const float PinDeadZone = 5f; // closer than this the bearing jitters wildly
         private const float FocusDegrees = 10f; // how close to the centre a pin must be to get its label
@@ -151,7 +151,8 @@ namespace SimpleCompass
             _focusLabel.enabled = focus != null;
             if (focus == null) return 0f;
             var d = focus.m_pos - from;
-            var name = _showPinNames.Value ? focus.m_name?.Trim() : null;
+            // Vanilla pin names can hold tokens (death pins are "$hud_mapday 430"); Localize is cached.
+            var name = _showPinNames.Value ? Localization.instance.Localize(focus.m_name)?.Trim() : null;
             var text = CompassMath.FormatDistance(new Vector2(d.x, d.z).magnitude);
             _focusLabel.text = string.IsNullOrEmpty(name) ? text : $"{name}  {text}";
             _focusLabel.fontSize = _fontSize.Value * 0.85f;
