@@ -1,5 +1,5 @@
 # Build first (Release), then: pwsh tools/package.ps1 [-Name Friendly_Clock -Dll FriendlyClock -Extra art/clock_*.png]
-# Shared by both mods (simple_compas calls this script with its own arguments).
+# Shared by all mods (simple_compas and weather_altar call this script with its own arguments).
 param(
     [string]$Root = (Split-Path $PSScriptRoot -Parent),
     [string]$Name = 'Friendly_Clock',
