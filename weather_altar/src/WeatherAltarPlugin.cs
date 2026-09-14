@@ -13,7 +13,7 @@ namespace WeatherAltar
     {
         public const string PluginGuid = "com.mous.weatheraltar";
         public const string PluginName = "Weather Altar";
-        public const string PluginVersion = "1.0.0";
+        public const string PluginVersion = "1.0.1";
 
         private Harmony _harmony;
 
