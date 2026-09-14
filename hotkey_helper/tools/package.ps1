@@ -9,6 +9,7 @@ $dll = Join-Path $root 'bin\Release\net48\HotkeyHelper.dll'
 $manifest = Join-Path $root 'package\manifest.json'
 $readme = Join-Path $root 'package\README.md'
 $icon = Join-Path $root 'package\icon.png'
+$changelog = Join-Path $root 'package\CHANGELOG.md'
 
 if (-not (Test-Path $dll)) { throw "HotkeyHelper.dll not found. Build first." }
 $version = (Get-Content $manifest -Raw | ConvertFrom-Json).version_number
@@ -31,7 +32,7 @@ if (-not (Test-Path $icon)) {
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
 New-Item -ItemType Directory -Path $plugins -Force | Out-Null
 Copy-Item $dll $plugins
-Copy-Item $manifest, $readme, $icon $dist
+Copy-Item $manifest, $readme, $icon, $changelog $dist
 
 $img = [System.Drawing.Image]::FromFile($icon)
 try { if ($img.Width -ne 256 -or $img.Height -ne 256) { throw "icon.png must be 256x256" } } finally { $img.Dispose() }
