@@ -1,0 +1,10 @@
+{
+    "name": "Calm_Seas",
+    "version_number": "1.1.0",
+    "website_url": "https://github.com/EnyMan/valheim-mods/tree/main/calm_seas",
+    "description": "Scale ocean wave height, calmer near land and rougher out at sea. Server-synced. Boats, swimming and the water you see all follow it; sailing speed stays vanilla.",
+    "dependencies": [
+        "denikson-BepInExPack_Valheim-5.4.2350",
+        "ValheimModding-Jotunn-2.30.0"
+    ]
+}
