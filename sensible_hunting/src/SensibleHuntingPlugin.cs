@@ -1,0 +1,358 @@
+using System.Collections.Generic;
+using BepInEx;
+using BepInEx.Configuration;
+using HarmonyLib;
+using Jotunn.Configs;
+using Jotunn.Managers;
+using TMPro;
+using UnityEngine;
+using UnityEngine.UI;
+
+namespace SensibleHunting
+{
+    [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
+    [BepInDependency(Jotunn.Main.ModGuid)]
+    public class SensibleHuntingPlugin : BaseUnityPlugin
+    {
+        public const string PluginGuid = "com.mous.sensiblehunting";
+        public const string PluginName = "Sensible Hunting";
+        public const string PluginVersion = "1.0.0";
+        internal const string SkillIdentifier = PluginGuid + ".hunting";
+
+        internal static Skills.SkillType Hunting;
+        internal static SensibleHuntingPlugin Instance;
+
+        private static readonly Color Gold = new Color(1f, 0.79f, 0.25f);
+        private const float PulseFade = 0.3f; // seconds of ramp at each end of a pulse
+
+        internal ConfigEntry<bool> Enabled;
+        internal ConfigEntry<float> MinRange;
+        internal ConfigEntry<float> MaxRange;
+        internal ConfigEntry<float> EdgeMargin;
+        internal ConfigEntry<float> NearSize;
+        internal ConfigEntry<float> FarSize;
+        internal ConfigEntry<float> Opacity;
+        internal ConfigEntry<bool> RequireCrouch;
+        internal ConfigEntry<string> GameAnimals;
+        internal ConfigEntry<float> MaxBearingError;
+        internal ConfigEntry<float> PulseOnAtZero;
+        internal ConfigEntry<float> PulseOnAtHundred;
+        internal ConfigEntry<float> PulseGapAtZero;
+        internal ConfigEntry<float> PulseGapAtHundred;
+        internal ConfigEntry<float> BallparkStep;
+        internal ConfigEntry<string> Glyph;
+        internal ConfigEntry<string> EdgeGlyph;
+        internal ConfigEntry<float> StalkFactor;
+        internal ConfigEntry<float> HitFactor;
+        internal ConfigEntry<float> KillFactor;
+        internal ConfigEntry<float> StalkMoveDistance;
+
+        private Harmony _harmony;
+        private RectTransform _root;
+        private readonly List<BlipView> _blips = new List<BlipView>();
+        private readonly List<Character> _scratch = new List<Character>();
+
+        /// One indicator: the wave glyph (rotates to point off-screen), the species icon, the distance.
+        private class BlipView
+        {
+            public RectTransform Root;
+            public TextMeshProUGUI Wave;
+            public TextMeshProUGUI Label;
+            public Image Icon;
+
+            public void SetActive(bool on)
+            {
+                if (Root.gameObject.activeSelf != on) Root.gameObject.SetActive(on);
+            }
+        }
+
+        private void Awake()
+        {
+            Instance = this;
+            Enabled = Config.Bind("1 - General", "Enabled", true, "Show hunting indicators.");
+            MinRange = Config.Bind("1 - General", "MinRange", 30f,
+                new ConfigDescription("Detection radius at skill 0 (metres).", new AcceptableValueRange<float>(5f, 100f)));
+            MaxRange = Config.Bind("1 - General", "MaxRange", 90f,
+                new ConfigDescription("Detection radius at skill 100 (metres). Only creatures loaded around you can be sensed: " +
+                    "at the default Simulation Distance that is every direction to ~128 m and some directions to ~270 m.",
+                    new AcceptableValueRange<float>(10f, 175f)));
+            GameAnimals = Config.Bind("1 - General", "GameAnimals", "Boar,Neck,Lox,Asksvin",
+                "Creatures that fight back but still count as game (prefab names, comma separated). " +
+                "Anything with the passive animal AI - deer, hares, chickens, young animals - always counts.");
+            GameAnimals.SettingChanged += (_, __) => _gameNames = null;
+            RequireCrouch = Config.Bind("1 - General", "RequireCrouch", true,
+                "Only sense game while crouched. Standing up stops the instinct.");
+            MaxBearingError = Config.Bind("1 - General", "MaxBearingError", 10f,
+                new ConfigDescription("How far off a blip may point at skill 0, in degrees. Shrinks as the skill rises, gone by 50.",
+                    new AcceptableValueRange<float>(0f, 90f)));
+            BallparkStep = Config.Bind("1 - General", "BallparkStep", 5f,
+                new ConfigDescription("Rounding of the rough distance shown at skill 25-49 (metres).", new AcceptableValueRange<float>(1f, 25f)));
+            PulseOnAtZero = Config.Bind("2 - Pulse", "VisibleAtSkill0", 0.8f,
+                new ConfigDescription("Seconds a blip stays up per pulse at skill 0.", new AcceptableValueRange<float>(0.1f, 10f)));
+            PulseOnAtHundred = Config.Bind("2 - Pulse", "VisibleAtSkill100", 2.5f,
+                new ConfigDescription("Seconds a blip stays up per pulse at skill 100.", new AcceptableValueRange<float>(0.1f, 10f)));
+            PulseGapAtZero = Config.Bind("2 - Pulse", "GapAtSkill0", 6f,
+                new ConfigDescription("Seconds of nothing between pulses at skill 0.", new AcceptableValueRange<float>(0f, 30f)));
+            PulseGapAtHundred = Config.Bind("2 - Pulse", "GapAtSkill100", 1.5f,
+                new ConfigDescription("Seconds of nothing between pulses at skill 100.", new AcceptableValueRange<float>(0f, 30f)));
+            EdgeMargin = Config.Bind("2 - Layout", "EdgeMargin", 64f,
+                new ConfigDescription("Keep edge indicators this many pixels inside the screen.", new AcceptableValueRange<float>(0f, 300f)));
+            NearSize = Config.Bind("2 - Layout", "NearSize", 34f,
+                new ConfigDescription("Size of a blip right next to you.", new AcceptableValueRange<float>(8f, 96f)));
+            FarSize = Config.Bind("2 - Layout", "FarSize", 16f,
+                new ConfigDescription("Size of a blip at the edge of your detection range.", new AcceptableValueRange<float>(8f, 96f)));
+            Opacity = Config.Bind("2 - Layout", "Opacity", 0.85f,
+                new ConfigDescription("Overall opacity.", new AcceptableValueRange<float>(0.1f, 1f)));
+            Glyph = Config.Bind("2 - Layout", "Glyph", "((•))", "Blip drawn over an animal you can see.");
+            EdgeGlyph = Config.Bind("2 - Layout", "EdgeGlyph", "•)))", "Blip pinned to the screen edge; it is rotated to point at the animal.");
+            StalkFactor = Config.Bind("3 - Experience", "StalkFactor", 0.25f,
+                new ConfigDescription("Fraction of the sneak XP tick also awarded as hunting XP while an animal is detected.",
+                    new AcceptableValueRange<float>(0f, 2f)));
+            HitFactor = Config.Bind("3 - Experience", "HitFactor", 1f,
+                new ConfigDescription("XP for hitting a wild animal, scaled by the fraction of its health removed.",
+                    new AcceptableValueRange<float>(0f, 10f)));
+            KillFactor = Config.Bind("3 - Experience", "KillFactor", 4f,
+                new ConfigDescription("XP for killing a wild animal, multiplied by its star level.",
+                    new AcceptableValueRange<float>(0f, 50f)));
+            StalkMoveDistance = Config.Bind("3 - Experience", "StalkMoveDistance", 5f,
+                new ConfigDescription("Anti-AFK: stalking only pays again once you have moved this far or the nearest animal changed.",
+                    new AcceptableValueRange<float>(0f, 50f)));
+
+            Hunting = SkillManager.Instance.AddSkill(new SkillConfig
+            {
+                Identifier = SkillIdentifier,
+                Name = "Hunting",
+                Description = "Reading the woods. Higher hunting senses wild game further away, points at it more truly, and tells you what it is.",
+                IncreaseStep = 1f,
+            });
+
+            _harmony = new Harmony(PluginGuid);
+            _harmony.PatchAll(typeof(HuntingXp));
+            Logger.LogInfo($"{PluginName} {PluginVersion} loaded");
+        }
+
+        private void OnDestroy() => _harmony?.UnpatchSelf();
+
+        private static HashSet<string> _gameNames;
+
+        /// Is this something you hunt? Not by faction: Boar, Neck and Lox are MonsterAI creatures outside
+        /// AnimalsVeg, so a faction test silently rejects the most common game in the game. Passive
+        /// AnimalAI creatures always count; animals that fight back come from the GameAnimals list.
+        internal static bool IsGame(Character c)
+        {
+            if (c == null || c.IsPlayer() || c.IsTamed()) return false;
+            if (c.GetBaseAI() is AnimalAI) return true;
+            if (_gameNames == null) _gameNames = HuntMath.ParseNames(Instance.GameAnimals.Value);
+            return _gameNames.Contains(Utils.GetPrefabName(c.gameObject));
+        }
+
+        /// Game that is still worth sensing or stalking.
+        internal static bool IsWildGame(Character c) => IsGame(c) && !c.IsDead();
+
+        /// Nearest wild animal to the player within the current detection range, or null.
+        internal Character NearestGame(Player player, float range)
+        {
+            _scratch.Clear();
+            Character.GetCharactersInRange(player.transform.position, range, _scratch);
+            Character best = null;
+            var bestSqr = float.MaxValue;
+            foreach (var c in _scratch)
+            {
+                if (!IsWildGame(c)) continue;
+                var sqr = (c.transform.position - player.transform.position).sqrMagnitude;
+                if (sqr >= bestSqr) continue;
+                bestSqr = sqr;
+                best = c;
+            }
+            return best;
+        }
+
+        internal float CurrentRange(Player player) =>
+            HuntMath.BySkill(player.GetSkillFactor(Hunting), MinRange.Value, MaxRange.Value);
+
+        /// Sensing is something you do, not something you have on: you have to be crouched and listening.
+        internal bool IsSensing(Player player) => !RequireCrouch.Value || player.IsCrouching();
+
+        /// Where an animal was when a pulse sensed it. The blip stays on this spot for the whole pulse
+        /// even if the animal walks off: you heard something there, not a tracker on its back.
+        private struct Sighting
+        {
+            public Vector3 Position; // already skewed by the bearing error
+            public Sprite Icon;      // captured now: the animal may be gone by the time we draw
+        }
+
+        private readonly List<Sighting> _sightings = new List<Sighting>();
+        private int _pulseIndex = -1;
+
+        private void Update()
+        {
+            var player = Player.m_localPlayer;
+            var cam = Camera.main;
+            if (Hud.instance == null || player == null || cam == null) return;
+            if (_root == null && !TryCreate()) return;
+
+            var visible = Enabled.Value && !Minimap.IsOpen() && !player.IsDead() && IsSensing(player);
+            if (_root.gameObject.activeSelf != visible) _root.gameObject.SetActive(visible);
+            if (!visible)
+            {
+                _pulseIndex = -1; // crouching again starts a fresh listen instead of replaying a stale one
+                return;
+            }
+
+            var skill = player.GetSkillFactor(Hunting);
+            var range = CurrentRange(player);
+            var tier = HuntMath.DetailTier(skill);
+            var on = HuntMath.BySkill(skill, PulseOnAtZero.Value, PulseOnAtHundred.Value);
+            var gap = HuntMath.BySkill(skill, PulseGapAtZero.Value, PulseGapAtHundred.Value);
+            var eye = player.transform.position;
+
+            // New pulse: listen once, remember where everything was.
+            var index = HuntMath.PulseIndex(Time.time, on, gap);
+            if (index != _pulseIndex)
+            {
+                _pulseIndex = index;
+                Sense(eye, range, tier);
+            }
+
+            // The whole display pulses: up for a moment, then gone. Skip the work while it is dark.
+            var pulse = HuntMath.PulseAlpha(Time.time, on, gap, PulseFade);
+            if (pulse <= 0f)
+            {
+                for (var i = 0; i < _blips.Count; i++) _blips[i].SetActive(false);
+                return;
+            }
+
+            float w = Screen.width, h = Screen.height;
+            var used = 0;
+            foreach (var sighting in _sightings)
+            {
+                // Distance to the spot from where you are now: walking toward it reads as closing in.
+                var distance = Vector3.Distance(sighting.Position, eye);
+                var v = cam.WorldToViewportPoint(sighting.Position);
+                var blip = HuntMath.Project(v.x, v.y, v.z, w, h, EdgeMargin.Value);
+                var size = HuntMath.BlipScale(distance, range, FarSize.Value, NearSize.Value);
+                var alpha = Opacity.Value * pulse * HuntMath.DistanceFade(distance, range);
+
+                var view = ViewAt(used++);
+                view.SetActive(true);
+                view.Root.anchoredPosition = new Vector2(blip.X, blip.Y);
+
+                // The species icon replaces the wave when the spot is on screen, an arrow adds nothing.
+                // Off screen the wave stays and rotates, or the direction is lost.
+                var icon = sighting.Icon;
+                var showWave = icon == null || blip.OffScreen;
+                view.Wave.gameObject.SetActive(showWave);
+                if (showWave)
+                {
+                    view.Wave.text = blip.OffScreen ? EdgeGlyph.Value : Glyph.Value;
+                    view.Wave.fontSize = size;
+                    view.Wave.alpha = alpha;
+                    view.Wave.rectTransform.localEulerAngles = blip.OffScreen ? new Vector3(0f, 0f, blip.Angle) : Vector3.zero;
+                }
+
+                view.Icon.gameObject.SetActive(icon != null);
+                if (icon != null)
+                {
+                    view.Icon.sprite = icon;
+                    view.Icon.color = new Color(1f, 1f, 1f, alpha);
+                    view.Icon.rectTransform.sizeDelta = new Vector2(size * 1.6f, size * 1.6f);
+                    view.Icon.rectTransform.anchoredPosition = new Vector2(0f, showWave ? size * 1.3f : 0f);
+                }
+
+                var label = tier == 0 ? "" : tier == 1 ? HuntMath.Ballpark(distance, BallparkStep.Value) : HuntMath.Exact(distance);
+                view.Label.gameObject.SetActive(label.Length > 0);
+                view.Label.text = label;
+                view.Label.fontSize = size * 0.7f;
+                view.Label.alpha = alpha;
+                view.Label.rectTransform.anchoredPosition = new Vector2(0f, -size * 0.9f);
+            }
+            for (var i = used; i < _blips.Count; i++) _blips[i].SetActive(false);
+        }
+
+        /// One listen: snapshot every animal in range, with this stage's bearing error baked in.
+        private void Sense(Vector3 eye, float range, int tier)
+        {
+            _sightings.Clear();
+            var error = HuntMath.ErrorForTier(tier, MaxBearingError.Value);
+            _scratch.Clear();
+            Character.GetCharactersInRange(eye, range, _scratch);
+            foreach (var c in _scratch)
+            {
+                if (!IsWildGame(c)) continue;
+                var target = c.GetCenterPoint();
+                // Low skill points you the wrong way on purpose: a fixed error per animal, not per pulse.
+                if (error > 0f)
+                {
+                    var skew = Quaternion.AngleAxis(HuntMath.BearingErrorDegrees(c.GetZDOID().GetHashCode(), error), Vector3.up);
+                    target = eye + skew * (target - eye);
+                }
+                _sightings.Add(new Sighting { Position = target, Icon = tier >= 3 ? TrophyIcons.For(c) : null });
+            }
+        }
+
+        private BlipView ViewAt(int index)
+        {
+            while (_blips.Count <= index)
+            {
+                var go = new GameObject($"blip{_blips.Count}", typeof(RectTransform));
+                go.transform.SetParent(_root, false);
+                var root = go.GetComponent<RectTransform>();
+                root.anchorMin = root.anchorMax = Vector2.zero;
+                root.pivot = new Vector2(0.5f, 0.5f);
+                root.sizeDelta = Vector2.zero;
+                _blips.Add(new BlipView
+                {
+                    Root = root,
+                    Wave = MakeText(root, "wave"),
+                    Label = MakeText(root, "label"),
+                    Icon = MakeIcon(root),
+                });
+            }
+            return _blips[index];
+        }
+
+        private static TextMeshProUGUI MakeText(RectTransform parent, string name)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(TextMeshProUGUI));
+            go.transform.SetParent(parent, false);
+            var text = go.GetComponent<TextMeshProUGUI>();
+            text.font = Hud.instance.m_healthText.font;
+            text.fontSharedMaterial = Hud.instance.m_healthText.fontSharedMaterial;
+            text.color = Gold;
+            text.alignment = TextAlignmentOptions.Center;
+            text.raycastTarget = false;
+            text.rectTransform.anchorMin = text.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            text.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            text.rectTransform.sizeDelta = new Vector2(300f, 48f);
+            return text;
+        }
+
+        private static Image MakeIcon(RectTransform parent)
+        {
+            var go = new GameObject("icon", typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(parent, false);
+            var image = go.GetComponent<Image>();
+            image.raycastTarget = false;
+            image.preserveAspect = true;
+            image.rectTransform.anchorMin = image.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            image.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            return image;
+        }
+
+        private bool TryCreate()
+        {
+            if (Hud.instance == null || Hud.instance.m_rootObject == null) return false;
+            var go = new GameObject("SensibleHuntingRoot", typeof(RectTransform), typeof(Canvas));
+            go.transform.SetParent(Hud.instance.m_rootObject.transform, false);
+            _root = go.GetComponent<RectTransform>();
+            _root.anchorMin = Vector2.zero;
+            _root.anchorMax = Vector2.one;
+            _root.offsetMin = _root.offsetMax = Vector2.zero;
+            // Same trick as Hotkey Helper: InventoryGui draws over anything under m_rootObject.
+            var canvas = go.GetComponent<Canvas>();
+            canvas.overrideSorting = true;
+            canvas.sortingOrder = 10;
+            return true;
+        }
+    }
+}
