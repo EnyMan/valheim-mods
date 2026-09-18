@@ -12,8 +12,10 @@ namespace SensibleHunting
 
         internal static Sprite For(Character c)
         {
-            // m_name is the localization token, identical for every instance of a species.
-            var key = (c.m_name ?? "").GetStableHashCode();
+            // Prefab name, stripped of "(Clone)": identical for every instance of a species, and unlike
+            // m_name never empty - seagulls have no localization token, so keying on m_name pooled every
+            // nameless creature under one cache entry.
+            var key = Utils.GetPrefabName(c.gameObject).GetStableHashCode();
             if (Cache.TryGetValue(key, out var cached)) return cached;
 
             Sprite trophy = null, any = null;

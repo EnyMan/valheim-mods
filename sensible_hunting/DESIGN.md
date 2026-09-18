@@ -13,6 +13,17 @@ a truer bearing, and more detail. It should feel like reading the woods, not a r
 - **Pinned per pulse.** At the start of each pulse the mod records where every animal is. The
   blip stays on that spot for the whole pulse even if the animal moves; the next pulse picks up
   the new position. The distance label is measured from the player's current position.
+- **Night is the hunter's hour.** The bearing error is multiplied by `DaytimeErrorScale` (2x by
+  default) at midday, ramping back to 1x through dusk on EnvMan's own daylight curve. Below skill 50
+  only - from stage 2 up the bearing is true and there is no error left to scale.
+- **Nothing in the air.** A flying species (`Character.m_flying`) is only sensed while it is on the
+  ground; ground animals are never affected, so a jumping boar does not blink out. Hits and kills on
+  fliers still pay XP.
+- **Eyes beat instinct.** If an animal is on screen, unobstructed (terrain/buildings/trees raycast
+  **from the player's head**, not the camera - the 3rd person camera sees round trunks you don't) and
+  not hidden by the Mistlands mist (`ParticleMist.IsMistBlocked`, so a Wisplight counts), its blip
+  drops the bearing error and tracks the animal live for the whole pulse. In the mist, or behind a
+  rock, the pulse-pinned guess is all you get - which is exactly where the instinct should matter.
 - **Range** grows with skill, 30 m → 90 m by default, config max 175 m. Only creatures loaded
   around the player can be sensed (every direction to ~128 m at the default Simulation Distance).
 
@@ -45,7 +56,7 @@ target dead astern is placed at the bottom edge.
 ## What counts as game
 
 Wild (not tamed) creatures that either use the passive `AnimalAI` (deer, hares, chickens, young
-animals) or whose prefab name is in `GameAnimals` (default `Boar,Neck,Lox,Asksvin`). Monsters,
+animals) or whose prefab name is in `GameAnimals` (default `Boar,Neck,Lox,Asksvin,Wolf,Seagal,Moose,Seal`). Monsters,
 players and tames never show.
 
 ## Experience

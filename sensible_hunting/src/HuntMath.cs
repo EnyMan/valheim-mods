@@ -55,6 +55,16 @@ namespace SensibleHunting
             };
         }
 
+        /// How much daylight there is, 0 at night, 1 at midday, ramping across dawn and dusk. Same
+        /// curve EnvMan uses for its own day intensity, so it turns over when the light does.
+        internal static float Daylight(float dayFraction) =>
+            Mathf.Sqrt(Mathf.Clamp01(1f - Mathf.Abs(dayFraction - 0.5f) / 0.25f));
+
+        /// Is this viewport point actually on screen in front of the camera? Only then can the player
+        /// be looking at it, whatever a line-of-sight raycast says.
+        internal static bool InView(float vx, float vy, float vz) =>
+            vz > 0f && vx >= 0f && vx <= 1f && vy >= 0f && vy <= 1f;
+
         /// Anything the skill scales: detection radius, how long a pulse shows, how long the gap is.
         /// Pass a larger at0 than at100 for the things that shrink as you get better.
         internal static float BySkill(float skillFactor, float at0, float at100) =>

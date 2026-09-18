@@ -16,7 +16,7 @@ namespace SensibleHunting
     {
         public const string PluginGuid = "com.mous.sensiblehunting";
         public const string PluginName = "Sensible Hunting";
-        public const string PluginVersion = "1.0.0";
+        public const string PluginVersion = "1.1.0";
         internal const string SkillIdentifier = PluginGuid + ".hunting";
 
         internal static Skills.SkillType Hunting;
@@ -35,6 +35,8 @@ namespace SensibleHunting
         internal ConfigEntry<bool> RequireCrouch;
         internal ConfigEntry<string> GameAnimals;
         internal ConfigEntry<float> MaxBearingError;
+        internal ConfigEntry<float> DaytimeErrorScale;
+        internal ConfigEntry<float> SightRadius;
         internal ConfigEntry<float> PulseOnAtZero;
         internal ConfigEntry<float> PulseOnAtHundred;
         internal ConfigEntry<float> PulseGapAtZero;
@@ -48,6 +50,7 @@ namespace SensibleHunting
         internal ConfigEntry<float> StalkMoveDistance;
 
         private Harmony _harmony;
+        private static int _viewBlockMask;
         private RectTransform _root;
         private readonly List<BlipView> _blips = new List<BlipView>();
         private readonly List<Character> _scratch = new List<Character>();
@@ -76,8 +79,9 @@ namespace SensibleHunting
                 new ConfigDescription("Detection radius at skill 100 (metres). Only creatures loaded around you can be sensed: " +
                     "at the default Simulation Distance that is every direction to ~128 m and some directions to ~270 m.",
                     new AcceptableValueRange<float>(10f, 175f)));
-            GameAnimals = Config.Bind("1 - General", "GameAnimals", "Boar,Neck,Lox,Asksvin",
-                "Creatures that fight back but still count as game (prefab names, comma separated). " +
+            GameAnimals = Config.Bind("1 - General", "GameAnimals", "Boar,Neck,Lox,Asksvin,Wolf,Seagal,Moose,Seal",
+                "Creatures that fight back but still count as game, plus anything that is not a plain ground animal " +
+                "(prefab names, comma separated - Seagal is the seagull, spelled that way in the game files). " +
                 "Anything with the passive animal AI - deer, hares, chickens, young animals - always counts.");
             GameAnimals.SettingChanged += (_, __) => _gameNames = null;
             RequireCrouch = Config.Bind("1 - General", "RequireCrouch", true,
@@ -85,6 +89,14 @@ namespace SensibleHunting
             MaxBearingError = Config.Bind("1 - General", "MaxBearingError", 10f,
                 new ConfigDescription("How far off a blip may point at skill 0, in degrees. Shrinks as the skill rises, gone by 50.",
                     new AcceptableValueRange<float>(0f, 90f)));
+            DaytimeErrorScale = Config.Bind("1 - General", "DaytimeErrorScale", 2f,
+                new ConfigDescription("Multiplier on MaxBearingError at midday, ramping down to 1x through dusk and back up through dawn. " +
+                    "Set to 1 for no day/night difference. Only bites below skill 50, where the bearing error exists at all.",
+                    new AcceptableValueRange<float>(0.1f, 5f)));
+            SightRadius = Config.Bind("1 - General", "SightRadius", 0.3f,
+                new ConfigDescription("Thickness of the line-of-sight probe, in metres. A hair-thin ray (0) slips past tree trunks; " +
+                    "wider counts more things as cover, but an animal standing tight against the ground or a wall starts reading as hidden.",
+                    new AcceptableValueRange<float>(0f, 2f)));
             BallparkStep = Config.Bind("1 - General", "BallparkStep", 5f,
                 new ConfigDescription("Rounding of the rough distance shown at skill 25-49 (metres).", new AcceptableValueRange<float>(1f, 25f)));
             PulseOnAtZero = Config.Bind("2 - Pulse", "VisibleAtSkill0", 0.8f,
@@ -96,7 +108,7 @@ namespace SensibleHunting
             PulseGapAtHundred = Config.Bind("2 - Pulse", "GapAtSkill100", 1.5f,
                 new ConfigDescription("Seconds of nothing between pulses at skill 100.", new AcceptableValueRange<float>(0f, 30f)));
             EdgeMargin = Config.Bind("2 - Layout", "EdgeMargin", 64f,
-                new ConfigDescription("Keep edge indicators this many pixels inside the screen.", new AcceptableValueRange<float>(0f, 300f)));
+                new ConfigDescription("Keep edge indicators this far inside the screen, in HUD units (screen is 1920x1080 units at GUI scale 1).", new AcceptableValueRange<float>(0f, 300f)));
             NearSize = Config.Bind("2 - Layout", "NearSize", 34f,
                 new ConfigDescription("Size of a blip right next to you.", new AcceptableValueRange<float>(8f, 96f)));
             FarSize = Config.Bind("2 - Layout", "FarSize", 16f,
@@ -126,6 +138,10 @@ namespace SensibleHunting
                 IncreaseStep = 1f,
             });
 
+            // Same layers BaseAI blocks vision with, minus "viewblock" - that one is there to blind
+            // monsters, not you.
+            _viewBlockMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "terrain", "vehicle");
+
             _harmony = new Harmony(PluginGuid);
             _harmony.PatchAll(typeof(HuntingXp));
             Logger.LogInfo($"{PluginName} {PluginVersion} loaded");
@@ -149,6 +165,12 @@ namespace SensibleHunting
         /// Game that is still worth sensing or stalking.
         internal static bool IsWildGame(Character c) => IsGame(c) && !c.IsDead();
 
+        /// Game the instinct can actually read. Nothing in the air: there are no tracks in the sky, and a
+        /// blip hanging over open water on a circling gull is noise. `Character.m_flying` is a prefab flag
+        /// ("this species flies"), so only fliers get the on-the-ground test - a boar mid-jump never blinks
+        /// out. Hitting and killing still pay XP: shooting a gull out of the air is hunting, just not tracking.
+        internal static bool CanSense(Character c) => IsWildGame(c) && (!c.IsFlying() || c.IsOnGround());
+
         /// Nearest wild animal to the player within the current detection range, or null.
         internal Character NearestGame(Player player, float range)
         {
@@ -158,7 +180,7 @@ namespace SensibleHunting
             var bestSqr = float.MaxValue;
             foreach (var c in _scratch)
             {
-                if (!IsWildGame(c)) continue;
+                if (!CanSense(c)) continue;
                 var sqr = (c.transform.position - player.transform.position).sqrMagnitude;
                 if (sqr >= bestSqr) continue;
                 bestSqr = sqr;
@@ -174,11 +196,36 @@ namespace SensibleHunting
         internal bool IsSensing(Player player) => !RequireCrouch.Value || player.IsCrouching();
 
         /// Where an animal was when a pulse sensed it. The blip stays on this spot for the whole pulse
-        /// even if the animal walks off: you heard something there, not a tracker on its back.
+        /// even if the animal walks off: you heard something there, not a tracker on its back. Unless
+        /// you can see the animal - then the blip tracks it, because pretending not to would look broken.
         private struct Sighting
         {
-            public Vector3 Position; // already skewed by the bearing error
-            public Sprite Icon;      // captured now: the animal may be gone by the time we draw
+            public Vector3 Position;  // already skewed by the bearing error
+            public Sprite Icon;       // captured now: the animal may be gone by the time we draw
+            public Character Seen;    // set when you can actually see it: then the blip follows it live
+        }
+
+        /// Can the player see this point with their own eyes? Terrain, buildings and tree trunks block
+        /// it, and so does the Mistlands mist - by the game's own test, so a wisplight opens the view
+        /// back up. Swept with a radius, the way projectiles are (Projectile uses SphereCastAll with
+        /// m_rayRadius): a hair-thin ray threads straight past a trunk that plainly hides the animal.
+        /// The sweep stops one radius short of the target so the sphere does not clip the ground the
+        /// animal is standing on and call clear ground cover.
+        internal static bool CanSee(Vector3 eye, Vector3 point, float radius)
+        {
+            var delta = point - eye;
+            var distance = delta.magnitude;
+            if (distance < 0.01f) return true;
+            var dir = delta / distance;
+            if (radius <= 0f)
+            {
+                if (Physics.Raycast(eye, dir, distance, _viewBlockMask)) return false;
+            }
+            else if (Physics.SphereCast(eye, radius, dir, out _, Mathf.Max(0.01f, distance - radius), _viewBlockMask))
+            {
+                return false;
+            }
+            return !ParticleMist.IsMistBlocked(eye, point);
         }
 
         private readonly List<Sighting> _sightings = new List<Sighting>();
@@ -211,7 +258,7 @@ namespace SensibleHunting
             if (index != _pulseIndex)
             {
                 _pulseIndex = index;
-                Sense(eye, range, tier);
+                Sense(eye, player.m_eye.position, cam, range, tier);
             }
 
             // The whole display pulses: up for a moment, then gone. Skip the work while it is dark.
@@ -222,13 +269,18 @@ namespace SensibleHunting
                 return;
             }
 
-            float w = Screen.width, h = Screen.height;
+            // Canvas units, NOT Screen pixels: Valheim's GUI canvas has a CanvasScaler whose factor is
+            // min(width/1920, height/1080) x the GuiScale setting, so anything but 1920x1080 at scale 1
+            // pushed every blip away from the bottom-left corner and threw right-side ones off screen.
+            var rect = _root.rect;
+            float w = rect.width, h = rect.height;
             var used = 0;
             foreach (var sighting in _sightings)
             {
                 // Distance to the spot from where you are now: walking toward it reads as closing in.
-                var distance = Vector3.Distance(sighting.Position, eye);
-                var v = cam.WorldToViewportPoint(sighting.Position);
+                var spot = sighting.Seen != null ? sighting.Seen.GetCenterPoint() : sighting.Position;
+                var distance = Vector3.Distance(spot, eye);
+                var v = cam.WorldToViewportPoint(spot);
                 var blip = HuntMath.Project(v.x, v.y, v.z, w, h, EdgeMargin.Value);
                 var size = HuntMath.BlipScale(distance, range, FarSize.Value, NearSize.Value);
                 var alpha = Opacity.Value * pulse * HuntMath.DistanceFade(distance, range);
@@ -270,23 +322,32 @@ namespace SensibleHunting
         }
 
         /// One listen: snapshot every animal in range, with this stage's bearing error baked in.
-        private void Sense(Vector3 eye, float range, int tier)
+        private void Sense(Vector3 eye, Vector3 head, Camera cam, float range, int tier)
         {
             _sightings.Clear();
-            var error = HuntMath.ErrorForTier(tier, MaxBearingError.Value);
+            // Broad daylight is the worst time to read the woods: the instinct is sharpest at night.
+            var daylight = EnvMan.instance == null ? 0f : HuntMath.Daylight(EnvMan.instance.GetDayFraction());
+            var maxError = MaxBearingError.Value * Mathf.Lerp(1f, DaytimeErrorScale.Value, daylight);
+            var error = HuntMath.ErrorForTier(tier, maxError);
             _scratch.Clear();
             Character.GetCharactersInRange(eye, range, _scratch);
             foreach (var c in _scratch)
             {
-                if (!IsWildGame(c)) continue;
+                if (!CanSense(c)) continue;
                 var target = c.GetCenterPoint();
+                // If it is right there in front of you, your eyes win: no skew, and the blip rides the
+                // animal instead of the spot. Guessing at something you are looking at reads as a bug.
+                // On screen is a camera question; "is a tree in the way" is a head question. The 3rd
+                // person camera sits metres behind and above you, so it sees round trunks you do not.
+                var view = cam.WorldToViewportPoint(target);
+                var seen = HuntMath.InView(view.x, view.y, view.z) && CanSee(head, target, SightRadius.Value) ? c : null;
                 // Low skill points you the wrong way on purpose: a fixed error per animal, not per pulse.
-                if (error > 0f)
+                if (error > 0f && seen == null)
                 {
                     var skew = Quaternion.AngleAxis(HuntMath.BearingErrorDegrees(c.GetZDOID().GetHashCode(), error), Vector3.up);
                     target = eye + skew * (target - eye);
                 }
-                _sightings.Add(new Sighting { Position = target, Icon = tier >= 3 ? TrophyIcons.For(c) : null });
+                _sightings.Add(new Sighting { Position = target, Icon = tier >= 3 ? TrophyIcons.For(c) : null, Seen = seen });
             }
         }
 

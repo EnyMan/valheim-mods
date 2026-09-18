@@ -29,7 +29,7 @@ Client-side only. Nobody else needs it, and neither does the server.
 ## Configuration
 `BepInEx/config/com.mous.sensiblehunting.cfg` (or in-game with ConfigurationManager, changes apply live):
 
-- `Enabled`, `GameAnimals` (prefab names of animals that fight back but still count as game — Boar, Neck, Lox, Asksvin by default; passive animals always count), `RequireCrouch`, `MinRange`, `MaxRange`, `MaxBearingError`, `BallparkStep`
+- `Enabled`, `GameAnimals` (prefab names of animals that fight back but still count as game — Boar, Neck, Lox, Asksvin, Wolf, Seagal (the seagull), Moose and Seal by default; flying creatures are only sensed while on the ground; passive animals always count), `RequireCrouch`, `MinRange`, `MaxRange`, `MaxBearingError`, `BallparkStep`
 - `VisibleAtSkill0`, `VisibleAtSkill100`, `GapAtSkill0`, `GapAtSkill100`
 - `EdgeMargin`, `NearSize`, `FarSize`, `Opacity`, `Glyph`, `EdgeGlyph`
 - `StalkFactor`, `HitFactor`, `KillFactor`, `StalkMoveDistance`
