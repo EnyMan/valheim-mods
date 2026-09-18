@@ -31,3 +31,7 @@ Feedback and screenshots are welcome on [GitHub](https://github.com/EnyMan/valhe
 ## Installation
 
 Install via the Thunderstore Mod Manager or r2modman (dependencies are pulled automatically), or manually place `CalmSeas.dll` into `BepInEx/plugins/`.
+
+## License
+
+MIT — source at https://github.com/EnyMan/valheim-mods

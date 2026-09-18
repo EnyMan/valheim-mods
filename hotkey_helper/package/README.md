@@ -38,3 +38,7 @@ Entries appear after you load into a world once. Rebinding a mod's key updates t
 
 ## Notes
 Only hotkeys a mod stores in its BepInEx config (`KeyboardShortcut` or `KeyCode`) can be found; hardcoded keys cannot.
+
+## License
+
+MIT — source at https://github.com/EnyMan/valheim-mods

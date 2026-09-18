@@ -1,2 +1,0 @@
-# Build first (Release), then: pwsh tools/package.ps1
-& (Join-Path $PSScriptRoot '../../friendly_clock/tools/package.ps1') -Root (Split-Path $PSScriptRoot -Parent) -Name 'Simple_Compass' -Dll 'SimpleCompass' -Extra @()

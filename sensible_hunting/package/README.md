@@ -33,3 +33,7 @@ Client-side only. Nobody else needs it, and neither does the server.
 - `VisibleAtSkill0`, `VisibleAtSkill100`, `GapAtSkill0`, `GapAtSkill100`
 - `EdgeMargin`, `NearSize`, `FarSize`, `Opacity`, `Glyph`, `EdgeGlyph`
 - `StalkFactor`, `HitFactor`, `KillFactor`, `StalkMoveDistance`
+
+## License
+
+MIT — source at https://github.com/EnyMan/valheim-mods

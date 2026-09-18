@@ -16,3 +16,7 @@ Client-side only. Nobody else needs it, and neither does the server.
 - `FieldOfView` (degrees visible across the bar), `IntercardinalTicks`
 - `Position`, `Width`, `Opacity`, `FontSize`
 - `Range` (metres, 0 = no pins), `IconSize`, `HideCheckedPins`, `ShowPinNames`
+
+## License
+
+MIT — source at https://github.com/EnyMan/valheim-mods

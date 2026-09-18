@@ -20,3 +20,7 @@ Client-side only. Nobody else needs it, and neither does the server.
 
 ## Custom art
 The dial is made of three 512×512 PNG layers next to `FriendlyClock.dll`: `clock_face.png`, `clock_hand.png` (pointing up, rotating around the image centre) and `clock_cap.png`. Replace them with your own and they reload while the game is running. If a file is deleted, a simple built-in dial is drawn in its place.
+
+## License
+
+MIT — source at https://github.com/EnyMan/valheim-mods
