@@ -5,7 +5,7 @@
     <LangVersion>10</LangVersion>
     <RootNamespace>SensibleHunting</RootNamespace>
     <AssemblyName>SensibleHunting</AssemblyName>
-    <Version>1.2.0</Version>
+    <Version>1.2.1</Version>
     <Nullable>disable</Nullable>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Deterministic>true</Deterministic>

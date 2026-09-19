@@ -1,6 +1,6 @@
 {
     "name": "Sensible_Hunting",
-    "version_number": "1.2.0",
+    "version_number": "1.2.1",
     "website_url": "https://github.com/EnyMan/valheim-mods/tree/main/sensible_hunting",
     "description": "Adds a Hunting skill. Wild game nearby shows as an on-screen indicator, including behind you; the higher your skill the further you sense and the more you can tell. Client-side.",
     "dependencies": [

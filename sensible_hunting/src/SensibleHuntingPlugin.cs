@@ -17,10 +17,11 @@ namespace SensibleHunting
     {
         public const string PluginGuid = "com.mous.sensiblehunting";
         public const string PluginName = "Sensible Hunting";
-        public const string PluginVersion = "1.2.0";
+        public const string PluginVersion = "1.2.1";
         internal const string SkillIdentifier = PluginGuid + ".hunting";
 
         internal static Skills.SkillType Hunting;
+        internal static BepInEx.Logging.ManualLogSource Log;
         internal static SensibleHuntingPlugin Instance;
 
         private static readonly Color Gold = new Color(1f, 0.79f, 0.25f);
@@ -143,7 +144,9 @@ namespace SensibleHunting
             // monsters, not you.
             _viewBlockMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "terrain", "vehicle");
 
+            Log = Logger;
             SpeciesIcons.Load(Path.GetDirectoryName(Info.Location), Logger);
+            CommandManager.Instance.AddConsoleCommand(new ProbeCommand());
 
             _harmony = new Harmony(PluginGuid);
             _harmony.PatchAll(typeof(HuntingXp));

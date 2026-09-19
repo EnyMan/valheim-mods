@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1
+- New Asksvin locator head: the old one read like the Neck at icon size.
+- README now shows the skill stages in-game, and documents the line of sight, day/night and `SightRadius` behaviour that shipped in 1.1.0.
+- **If seagulls, wolves, moose or seals are not being tracked on an upgraded install, check your config.** BepInEx never overwrites a setting that already exists, so a `GameAnimals` line written by an earlier version keeps its old list. Add the missing names by hand, or delete the line and restart.
+- New hidden console command `sh_probe`: prints every animal in range with the reason it is or is not sensed, every ambient bird the game has loaded, and the live config list. `sh_probe <name>` also dumps the components of any matching object.
+
 ## 1.2.0
 - Stage 4 now names the animal with its own gold head silhouette instead of borrowing the trophy icon. Species without art still fall back to the trophy, or to anything else the animal drops.
 - Seagulls are sensed at last. `Seagal` is not a creature - it is a re-skinned crow with no Character component, so it could never show up however the config listed it; it now comes from the ambient bird registry instead, while it is on the ground.
