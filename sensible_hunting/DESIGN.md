@@ -19,6 +19,10 @@ a truer bearing, and more detail. It should feel like reading the woods, not a r
 - **Nothing in the air.** A flying species (`Character.m_flying`) is only sensed while it is on the
   ground; ground animals are never affected, so a jumping boar does not blink out. Hits and kills on
   fliers still pay XP.
+- **Seagulls are not creatures.** `Seagal` is a re-skinned crow - a `RandomFlyingBird` with no
+  `Character` component - so it is picked up from `RandomFlyingBird.Instances` instead, while landed
+  (`ZDOVars.s_landed`). It has no drop table to fall back on, so it needs its own art to get an icon,
+  and killing one pays no hunting XP: the XP patches hook `Character`, which a bird never is.
 - **Eyes beat instinct.** If an animal is on screen, unobstructed (terrain/buildings/trees raycast
   **from the player's head**, not the camera - the 3rd person camera sees round trunks you don't) and
   not hidden by the Mistlands mist (`ParticleMist.IsMistBlocked`, so a Wisplight counts), its blip
@@ -34,15 +38,16 @@ a truer bearing, and more detail. It should feel like reading the woods, not a r
 | 0–24 | `((•))` only, bearing up to 10° off |
 | 25–49 | bearing up to ~3.5° off, ballpark distance (`~15 m`) |
 | 50–74 | true bearing, exact distance (`12 m`) |
-| 75–100 | the animal's trophy icon |
+| 75–100 | the animal's head, in gold |
 
 - The bearing error is **fixed per animal** (hashed from its ZDOID), so a blip points
   consistently wrong rather than jittering.
 - **Size carries distance**: near blips are bigger (34 px → 16 px across the range) and the far
   quarter of the range fades out. No colour coding.
 - **No custom art.** The blip is a text glyph (`((•))` over the animal, `•)))` rotated at the
-  screen edge). The species icon is taken from the creature's own drop table: its trophy, or any
-  other drop's icon if it has no trophy.
+  screen edge). The species icon is the mod's own white head silhouette from `art/icons`, shipped next
+  to the DLL and tinted gold on screen; young animals borrow the adult's head. A species with no art
+  falls back to the creature's own drop table - its trophy, or any other drop's icon.
 - On screen the icon replaces the wave; at the screen edge the rotated wave stays and the icon
   sits above it, so the direction isn't lost.
 

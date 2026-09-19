@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
@@ -16,7 +17,7 @@ namespace SensibleHunting
     {
         public const string PluginGuid = "com.mous.sensiblehunting";
         public const string PluginName = "Sensible Hunting";
-        public const string PluginVersion = "1.1.0";
+        public const string PluginVersion = "1.2.0";
         internal const string SkillIdentifier = PluginGuid + ".hunting";
 
         internal static Skills.SkillType Hunting;
@@ -142,6 +143,8 @@ namespace SensibleHunting
             // monsters, not you.
             _viewBlockMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "terrain", "vehicle");
 
+            SpeciesIcons.Load(Path.GetDirectoryName(Info.Location), Logger);
+
             _harmony = new Harmony(PluginGuid);
             _harmony.PatchAll(typeof(HuntingXp));
             Logger.LogInfo($"{PluginName} {PluginVersion} loaded");
@@ -158,8 +161,14 @@ namespace SensibleHunting
         {
             if (c == null || c.IsPlayer() || c.IsTamed()) return false;
             if (c.GetBaseAI() is AnimalAI) return true;
+            return IsGameName(c.gameObject);
+        }
+
+        /// The prefab-name half of IsGame, for game that is not a Character at all.
+        internal static bool IsGameName(GameObject go)
+        {
             if (_gameNames == null) _gameNames = HuntMath.ParseNames(Instance.GameAnimals.Value);
-            return _gameNames.Contains(Utils.GetPrefabName(c.gameObject));
+            return _gameNames.Contains(Utils.GetPrefabName(go));
         }
 
         /// Game that is still worth sensing or stalking.
@@ -202,6 +211,7 @@ namespace SensibleHunting
         {
             public Vector3 Position;  // already skewed by the bearing error
             public Sprite Icon;       // captured now: the animal may be gone by the time we draw
+            public bool Gold;         // our own white art takes the gold tint; a trophy icon must not
             public Character Seen;    // set when you can actually see it: then the blip follows it live
         }
 
@@ -306,7 +316,7 @@ namespace SensibleHunting
                 if (icon != null)
                 {
                     view.Icon.sprite = icon;
-                    view.Icon.color = new Color(1f, 1f, 1f, alpha);
+                    view.Icon.color = sighting.Gold ? new Color(Gold.r, Gold.g, Gold.b, alpha) : new Color(1f, 1f, 1f, alpha);
                     view.Icon.rectTransform.sizeDelta = new Vector2(size * 1.6f, size * 1.6f);
                     view.Icon.rectTransform.anchoredPosition = new Vector2(0f, showWave ? size * 1.3f : 0f);
                 }
@@ -334,21 +344,50 @@ namespace SensibleHunting
             foreach (var c in _scratch)
             {
                 if (!CanSense(c)) continue;
-                var target = c.GetCenterPoint();
-                // If it is right there in front of you, your eyes win: no skew, and the blip rides the
-                // animal instead of the spot. Guessing at something you are looking at reads as a bug.
-                // On screen is a camera question; "is a tree in the way" is a head question. The 3rd
-                // person camera sits metres behind and above you, so it sees round trunks you do not.
-                var view = cam.WorldToViewportPoint(target);
-                var seen = HuntMath.InView(view.x, view.y, view.z) && CanSee(head, target, SightRadius.Value) ? c : null;
-                // Low skill points you the wrong way on purpose: a fixed error per animal, not per pulse.
-                if (error > 0f && seen == null)
-                {
-                    var skew = Quaternion.AngleAxis(HuntMath.BearingErrorDegrees(c.GetZDOID().GetHashCode(), error), Vector3.up);
-                    target = eye + skew * (target - eye);
-                }
-                _sightings.Add(new Sighting { Position = target, Icon = tier >= 3 ? TrophyIcons.For(c) : null, Seen = seen });
+                Add(eye, head, cam, error, c.GetZDOID().GetHashCode(), c.GetCenterPoint(), c,
+                    tier >= 3 ? SpeciesIcons.For(c.gameObject, c) : null);
             }
+
+            // Seagulls are not creatures. Seagal is a re-skinned crow: a RandomFlyingBird with no
+            // Character component, so GetCharactersInRange can never return one however the config
+            // lists it. Its own static registry can. Landed only, the same rule flying creatures get,
+            // and that state lives in the ZDO rather than in a field we can read.
+            foreach (var updater in RandomFlyingBird.Instances)
+            {
+                if (!(updater is RandomFlyingBird bird) || !IsGameName(bird.gameObject)) continue;
+                var pos = bird.transform.position;
+                if ((pos - eye).sqrMagnitude > range * range) continue;
+                var nview = bird.GetComponent<ZNetView>();
+                if (nview == null || !nview.IsValid() || !nview.GetZDO().GetBool(ZDOVars.s_landed)) continue;
+                // No Character means no drop table to fall back on and nothing to follow live: the blip
+                // stays where the pulse heard it, which is fine for a bird sitting still.
+                Add(eye, head, cam, error, bird.GetInstanceID(), pos, null,
+                    tier >= 3 ? SpeciesIcons.For(bird.gameObject, null) : null);
+            }
+        }
+
+        /// One sighting. If it is right there in front of you, your eyes win: no bearing error, and the
+        /// blip rides the animal instead of the spot - guessing at something you are looking at reads as
+        /// a bug. On screen is a camera question; "is a tree in the way" is a head question, because the
+        /// 3rd person camera sits metres behind and above you and sees round trunks you do not.
+        private void Add(Vector3 eye, Vector3 head, Camera cam, float error, int seed, Vector3 target,
+            Character live, Sprite icon)
+        {
+            var view = cam.WorldToViewportPoint(target);
+            var seen = HuntMath.InView(view.x, view.y, view.z) && CanSee(head, target, SightRadius.Value);
+            // Low skill points you the wrong way on purpose: a fixed error per animal, not per pulse.
+            if (error > 0f && !seen)
+            {
+                var skew = Quaternion.AngleAxis(HuntMath.BearingErrorDegrees(seed, error), Vector3.up);
+                target = eye + skew * (target - eye);
+            }
+            _sightings.Add(new Sighting
+            {
+                Position = target,
+                Icon = icon,
+                Gold = SpeciesIcons.IsOurs(icon),
+                Seen = seen ? live : null,
+            });
         }
 
         private BlipView ViewAt(int index)

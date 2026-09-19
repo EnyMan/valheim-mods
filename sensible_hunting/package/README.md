@@ -13,7 +13,7 @@ This is not a radar. It reaches 90 metres by default, blips fade with distance, 
 | 0–24 | roughly where — the blip can point as much as 10° off |
 | 25–49 | closer to the truth, and about how far (`~15 m`) |
 | 50–74 | the true bearing and the exact distance (`12 m`) |
-| 75–100 | what it is — the animal's own icon |
+| 75–100 | what it is — the animal's head, in gold |
 
 Detection range grows from 30 m to 90 m as the skill rises, and near game shows as a bigger
 blip, so you can read distance before you can read numbers.

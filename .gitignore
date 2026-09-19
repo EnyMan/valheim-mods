@@ -13,3 +13,7 @@ thunderstore.toml
 MODDING.md
 CLAUDE.md
 selfcheck.ps1
+# generated art pipeline: model output, the prompts behind it, and the contact sheet
+sensible_hunting/art/raw/
+sensible_hunting/art/PROMPTS.md
+sensible_hunting/art/preview.png
