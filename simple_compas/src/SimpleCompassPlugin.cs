@@ -13,7 +13,7 @@ namespace SimpleCompass
     {
         public const string PluginGuid = "com.mous.simplecompass";
         public const string PluginName = "Simple Compass";
-        public const string PluginVersion = "1.0.1";
+        public const string PluginVersion = "1.0.2";
 
         private const float PinDeadZone = 5f; // closer than this the bearing jitters wildly
         private const float FocusDegrees = 10f; // how close to the centre a pin must be to get its label
@@ -216,6 +216,7 @@ namespace SimpleCompass
             // Under the vanilla HUD root: hides with the HUD and stays below inventory/menus.
             var go = new GameObject("SimpleCompass", typeof(RectTransform), typeof(CanvasGroup));
             _root = (RectTransform)go.transform;
+            _icons.Clear(); // the old HUD (and its pin icons) died with the previous world
             _root.SetParent(Hud.instance.m_rootObject.transform, false);
             var group = go.GetComponent<CanvasGroup>();
             group.blocksRaycasts = false;
