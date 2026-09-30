@@ -1,5 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
 using BepInEx;
 using BepInEx.Configuration;
 using TMPro;
@@ -15,7 +19,7 @@ namespace FriendlyClock
     {
         public const string PluginGuid = "com.mous.friendlyclock";
         public const string PluginName = "Friendly Clock";
-        public const string PluginVersion = "1.0.0";
+        public const string PluginVersion = "1.1.0";
 
         // Twelve two-hour phases from midnight; the dial draws one wedge per entry, so 00-06 and 18-24 are night.
         internal const string DefaultWords = "Midnight,Early Morning,Before Dawn,Dawn,Morning,Late Morning,Midday,Afternoon,Evening,Dusk,Night,Late Night";
@@ -28,8 +32,19 @@ namespace FriendlyClock
         private ConfigEntry<float> _opacity;
         private ConfigEntry<Vector2> _position;
         private ConfigEntry<string> _words;
+        private ConfigEntry<float> _tipWidth;
+        private ConfigEntry<float> _tipFontSize;
+        private ConfigEntry<Color> _tipBackground;
+
+        // BepInEx/config/FriendlyClock.phases.md: each "## Word" heading is a phase, the markdown under it its hover tooltip.
+        private const string PhaseFileName = "FriendlyClock.phases.md";
+        private DateTime _phaseStamp;
+        private string[] _fileWords, _fileTips;
 
         private RectTransform _root;
+        private RectTransform _tip;
+        private TextMeshProUGUI _tipText;
+        private const float TipPadding = 10f;
         private DialGraphic _face;
         // Painted art dropped next to the DLL replaces the drawn part (index = DialGraphic.Part); reloaded live when the file changes.
         private static readonly string[] AssetFiles = { "clock_face.png", "clock_hand.png", "clock_cap.png" };
@@ -56,7 +71,13 @@ namespace FriendlyClock
             _position = Config.Bind("2 - Layout", "Position", new Vector2(0.17f, 0.12f),
                 "Clock center on screen (0..1, x from left, y from bottom). Or open the inventory and drag the clock.");
             _words = Config.Bind("3 - Words", "DayPhases", DefaultWords,
-                "Comma-separated phase names spread evenly across the day, starting at midnight. The dial draws one segment per phase (12 = two hours each; use a count divisible by 4 so sunrise/sunset land on segment edges).");
+                "Comma-separated phase names spread evenly across the day, starting at midnight. The dial draws one segment per phase (12 = two hours each; use a count divisible by 4 so sunrise/sunset land on segment edges). " +
+                $"Ignored while BepInEx/config/{PhaseFileName} exists: there each '## Word' heading is a phase and the markdown below it shows on hover (inventory or map open).");
+            _tipWidth = Config.Bind("4 - Tooltip", "MaxWidth", 380f,
+                new ConfigDescription($"Maximum width of the {PhaseFileName} hover tooltip.", new AcceptableValueRange<float>(150f, 1000f)));
+            _tipFontSize = Config.Bind("4 - Tooltip", "FontSize", 18f,
+                new ConfigDescription("Base font size of the tooltip (headings scale from it).", new AcceptableValueRange<float>(10f, 40f)));
+            _tipBackground = Config.Bind("4 - Tooltip", "Background", new Color(0.05f, 0.04f, 0.03f, 0.9f), "Tooltip background color (RGBA).");
             Logger.LogInfo($"{PluginName} {PluginVersion} loaded");
         }
 
@@ -78,11 +99,13 @@ namespace FriendlyClock
             _root.GetComponent<CanvasGroup>().alpha = _opacity.Value;
             _face.gameObject.SetActive(style != ClockStyle.Words);
             _face.SetEditMode(editing);
-            CheckAssets();
-            _face.SetSegments(_words.Value.Split(',').Length);
+            CheckFiles();
+            var words = _fileWords ?? _words.Value.Split(',');
+            var phase = PhaseIndex(fraction, words.Length);
+            _face.SetSegments(words.Length);
             _hand.localRotation = Quaternion.Euler(0f, 0f, -(fraction - 0.25f) * 360f); // sunrise (0.25) at the top
 
-            var text = style == ClockStyle.Dial ? "" : WordFor(fraction, _words.Value);
+            var text = style == ClockStyle.Dial ? "" : words[phase].Trim();
             if (_showDay.Value)
                 text += (text == "" ? "" : "\n") + $"<size=80%>Day {EnvMan.instance.GetDay()}</size>";
             if (_label.text != text) _label.text = text;
@@ -95,6 +118,57 @@ namespace FriendlyClock
             _label.verticalAlignment = below ? VerticalAlignmentOptions.Top : VerticalAlignmentOptions.Middle;
 
             Drag(editing);
+            Tooltip(editing || Minimap.IsOpen() ? _fileTips?[phase] : null);
+        }
+
+        // Shown while the cursor is free and over the clock; follows the mouse, opening away from the nearest screen edges.
+        private void Tooltip(string tip)
+        {
+            var mouse = Input.mousePosition;
+            var cam = UiCamera();
+            var show = !string.IsNullOrEmpty(tip) && !_dragging &&
+                       ((_face.gameObject.activeSelf && RectTransformUtility.RectangleContainsScreenPoint(_face.rectTransform, mouse, cam)) ||
+                        OverText(_label, mouse, cam));
+            if (_tip.gameObject.activeSelf != show)
+            {
+                _tip.gameObject.SetActive(show);
+                if (show)
+                {
+                    // Nested canvas so it draws over the inventory; only sticks while active.
+                    var canvas = _tip.GetComponent<Canvas>();
+                    canvas.overrideSorting = true;
+                    canvas.sortingOrder = 30000;
+                }
+            }
+            if (!show) return;
+
+            _tip.GetComponent<Image>().color = _tipBackground.Value;
+            if (_tipText.text != tip) _tipText.text = tip;
+            _tipText.fontSize = _tipFontSize.Value;
+            var max = _tipWidth.Value - 2f * TipPadding;
+            var w = Mathf.Min(max, _tipText.GetPreferredValues(tip, max, 0f).x);
+            var h = _tipText.GetPreferredValues(tip, w, 0f).y;
+            _tip.sizeDelta = new Vector2(w, h) + 2f * TipPadding * Vector2.one;
+
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(_root, mouse, cam, out var local);
+            var right = mouse.x < Screen.width * 0.5f;
+            var up = mouse.y < Screen.height * 0.5f;
+            _tip.pivot = new Vector2(right ? 0f : 1f, up ? 0f : 1f);
+            _tip.anchoredPosition = local + new Vector2(right ? 16f : -16f, up ? 16f : -16f);
+        }
+
+        // The drawn glyphs (plus a small margin), not the fixed 240x60 label box, so pins next to a words-only clock stay reachable.
+        private static bool OverText(TMP_Text text, Vector2 screen, Camera cam)
+        {
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(text.rectTransform, screen, cam, out var local)) return false;
+            var b = text.textBounds;
+            return b.size.x > 0f && Rect.MinMaxRect(b.min.x - 6f, b.min.y - 6f, b.max.x + 6f, b.max.y + 6f).Contains(local);
+        }
+
+        private Camera UiCamera()
+        {
+            var canvas = _root.GetComponentInParent<Canvas>().rootCanvas;
+            return canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
         }
 
         // Drag with the inventory open (free cursor); saved to config on release.
@@ -103,8 +177,7 @@ namespace FriendlyClock
             var mouse = new Vector2(Input.mousePosition.x / Screen.width, Input.mousePosition.y / Screen.height);
             if (!_dragging && editing && Input.GetMouseButtonDown(0))
             {
-                var canvas = _root.GetComponentInParent<Canvas>().rootCanvas;
-                var cam = canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+                var cam = UiCamera();
                 var hit = _face.gameObject.activeSelf ? _face.rectTransform : _label.rectTransform;
                 if (RectTransformUtility.RectangleContainsScreenPoint(hit, Input.mousePosition, cam))
                 {
@@ -127,11 +200,60 @@ namespace FriendlyClock
             _root.anchoredPosition = Vector2.zero;
         }
 
-        internal static string WordFor(float dayFraction, string words)
+        internal static int PhaseIndex(float dayFraction, int count) =>
+            Mathf.Clamp((int)(count * Mathf.Repeat(dayFraction, 1f)), 0, count - 1);
+
+        // "## Word" starts a phase; everything up to the next "## " is its tooltip. Text before the first heading is ignored.
+        internal static List<KeyValuePair<string, string>> ParsePhases(string md)
         {
-            var list = words.Split(',');
-            var i = Mathf.Clamp((int)(list.Length * Mathf.Repeat(dayFraction, 1f)), 0, list.Length - 1);
-            return list[i].Trim();
+            var phases = new List<KeyValuePair<string, string>>();
+            string word = null;
+            var body = new StringBuilder();
+            foreach (var line in md.Replace("\r", "").Split('\n').Append("## "))
+            {
+                if (!line.StartsWith("## ")) { body.AppendLine(line); continue; }
+                if (word != null) phases.Add(new KeyValuePair<string, string>(word, MarkdownToTmp(body.ToString())));
+                word = line.Substring(3).Trim();
+                body.Clear();
+            }
+            return phases;
+        }
+
+        private static readonly int[] HeadingSizes = { 150, 130, 115 };
+
+        // Markdown subset -> TMP rich text: # headings, **bold**, *italic*/_italic_, ~~strike~~, - lists, > quotes, --- rules.
+        // TMP tags written directly in the file pass through untouched.
+        internal static string MarkdownToTmp(string md)
+        {
+            var lines = new List<string>();
+            foreach (var raw in md.Replace("\r", "").Split('\n'))
+            {
+                var line = raw.Trim();
+                var quote = false;
+                while (line.StartsWith(">")) { quote = true; line = line.Substring(1).TrimStart(); }
+                var indent = quote ? 5 : 0;
+
+                Match m;
+                if ((m = Regex.Match(line, @"^(#{1,6})\s+(.*)$")).Success)
+                    line = $"<size={(m.Groups[1].Length <= 3 ? HeadingSizes[m.Groups[1].Length - 1] : 100)}%><b>{Inline(m.Groups[2].Value)}</b></size>";
+                else if (Regex.IsMatch(line, @"^([-*_])( *\1){2,}$"))
+                    line = "<align=center><color=#FFFFFF80>— — —</color></align>";
+                else if ((m = Regex.Match(line, @"^[-*+]\s+(.*)$")).Success)
+                    line = $"<indent={indent}%>•<indent={indent + 5}%>{Inline(m.Groups[1].Value)}</indent>"; // hanging indent
+                else
+                    line = indent > 0 ? $"<indent={indent}%>{Inline(line)}</indent>" : Inline(line);
+
+                lines.Add(quote ? $"<color=#F2E0B3>{line}</color>" : line);
+            }
+            return string.Join("\n", lines).Trim('\n');
+        }
+
+        private static string Inline(string s)
+        {
+            s = Regex.Replace(s, @"\*\*(.+?)\*\*|__(.+?)__", m => $"<b>{m.Groups[1].Value}{m.Groups[2].Value}</b>");
+            s = Regex.Replace(s, @"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])|(?<!\w)_(?!\s)(.+?)(?<!\s)_(?!\w)",
+                m => $"<i>{m.Groups[1].Value}{m.Groups[2].Value}</i>");
+            return Regex.Replace(s, @"~~(.+?)~~", "<s>$1</s>");
         }
 
         private bool TryCreate()
@@ -160,6 +282,24 @@ namespace FriendlyClock
             _label.textWrappingMode = TextWrappingModes.NoWrap;
             _label.color = new Color(0.95f, 0.88f, 0.7f);
             _label.rectTransform.sizeDelta = new Vector2(240f, 60f);
+
+            var tip = new GameObject("Tooltip", typeof(RectTransform), typeof(Canvas), typeof(CanvasGroup), typeof(Image));
+            _tip = (RectTransform)tip.transform;
+            _tip.SetParent(_root, false);
+            _tip.anchorMin = _tip.anchorMax = new Vector2(0.5f, 0.5f);
+            var tipGroup = tip.GetComponent<CanvasGroup>();
+            tipGroup.ignoreParentGroups = true; // full opacity regardless of the clock's Opacity
+            tipGroup.blocksRaycasts = false;
+            tip.GetComponent<Image>().raycastTarget = false;
+            _tipText = Child<TextMeshProUGUI>("Text", _tip);
+            _tipText.rectTransform.offsetMin = Vector2.one * TipPadding;
+            _tipText.rectTransform.offsetMax = -Vector2.one * TipPadding;
+            _tipText.font = vanilla.font;
+            _tipText.fontSharedMaterial = vanilla.fontSharedMaterial;
+            _tipText.alignment = TextAlignmentOptions.TopLeft;
+            _tipText.textWrappingMode = TextWrappingModes.Normal;
+            _tipText.color = new Color(0.93f, 0.93f, 0.9f);
+            tip.SetActive(false);
             return true;
         }
 
@@ -171,10 +311,37 @@ namespace FriendlyClock
             return _parts[(int)part] = g;
         }
 
-        private void CheckAssets()
+        private void CheckFiles()
         {
             if (Time.unscaledTime < _nextAssetCheck) return;
             _nextAssetCheck = Time.unscaledTime + 1f;
+
+            var phaseFile = Path.Combine(Paths.ConfigPath, PhaseFileName);
+            var phaseStamp = File.Exists(phaseFile) ? File.GetLastWriteTimeUtc(phaseFile) : default;
+            if (phaseStamp != _phaseStamp)
+            {
+                _phaseStamp = phaseStamp;
+                _fileWords = _fileTips = null;
+                if (phaseStamp != default)
+                {
+                    try
+                    {
+                        var phases = ParsePhases(File.ReadAllText(phaseFile));
+                        if (phases.Count == 0) Logger.LogWarning($"{phaseFile} has no '## Word' headings; using DayPhases");
+                        else
+                        {
+                            _fileWords = phases.Select(p => p.Key).ToArray();
+                            _fileTips = phases.Select(p => p.Value).ToArray();
+                            Logger.LogInfo($"Loaded {phases.Count} phases from {phaseFile}");
+                        }
+                    }
+                    catch (IOException e)
+                    {
+                        Logger.LogWarning($"Could not read {phaseFile}: {e.Message}"); // mid-save; retried on the next change
+                    }
+                }
+            }
+
             var dir = Path.GetDirectoryName(Info.Location);
             for (var i = 0; i < AssetFiles.Length; i++)
             {
