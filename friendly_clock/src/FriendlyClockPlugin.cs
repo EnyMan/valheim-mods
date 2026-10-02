@@ -19,7 +19,7 @@ namespace FriendlyClock
     {
         public const string PluginGuid = "com.mous.friendlyclock";
         public const string PluginName = "Friendly Clock";
-        public const string PluginVersion = "1.1.0";
+        public const string PluginVersion = "1.1.1";
 
         // Twelve two-hour phases from midnight; the dial draws one wedge per entry, so 00-06 and 18-24 are night.
         internal const string DefaultWords = "Midnight,Early Morning,Before Dawn,Dawn,Morning,Late Morning,Midday,Afternoon,Evening,Dusk,Night,Late Night";
@@ -274,6 +274,8 @@ namespace FriendlyClock
             _face = Part("Face", _root, DialGraphic.Part.Face);
             _hand = Part("Hand", _face.transform, DialGraphic.Part.Hand).rectTransform;
             Part("Cap", _face.transform, DialGraphic.Part.Cap); // after the hand so it draws on top, and doesn't rotate
+            Array.Clear(_assetStamps, 0, _assetStamps.Length); // fresh parts (new world) need the art loaded again
+            _nextAssetCheck = 0f;
 
             _label = Child<TextMeshProUGUI>("Label", _root);
             _label.font = vanilla.font;

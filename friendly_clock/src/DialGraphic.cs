@@ -24,6 +24,12 @@ namespace FriendlyClock
             SetAllDirty();
         }
 
+        protected override void OnDestroy()
+        {
+            base.OnDestroy();
+            if (_texture != null) Destroy(_texture); // owned; otherwise leaks on every world switch
+        }
+
         private static readonly Vector2 LightDir = new Vector2(-0.6f, 0.8f);
         private static readonly Color32 Shadow = new Color32(28, 20, 14, 255);
         private static readonly Color32 BronzeDark = new Color32(92, 62, 32, 255);
