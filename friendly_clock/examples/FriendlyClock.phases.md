@@ -1,6 +1,6 @@
 Friendly Clock phase file. Copy to BepInEx/config/FriendlyClock.phases.md (reloads live while the game runs).
 Each "## " heading is one phase, in order from midnight, spread evenly over the day (12 = two hours each).
-Everything under a heading, up to the next "## ", is the tooltip shown when you hover the clock with the inventory or map open.
+Everything under a heading, up to the next "## ", is the tooltip shown when you hover the clock with the inventory, map or game menu open.
 Text above the first heading (like this) is ignored.
 Supported: # / ## / ### headings inside a tooltip, **bold**, *italic* or _italic_, ~~strike~~, - lists, > quotes, --- rules,
 and raw TextMeshPro tags such as <color=#8fd3ff>...</color> or <size=80%>...</size>.

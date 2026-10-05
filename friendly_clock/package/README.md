@@ -20,7 +20,7 @@ Client-side only. Nobody else needs it, and neither does the server.
 - `MaxWidth`, `FontSize`, `Background` of the phase tooltip (see below)
 
 ## Phase file with hover tooltips
-Create `BepInEx/config/FriendlyClock.phases.md` to replace `DayPhases`. Each `## ` heading is one phase, in order from midnight; the markdown under it shows as a tooltip when you hover the clock with the inventory or map open. Supports headings, **bold**, *italic*, lists, `>` quotes, `---` rules and raw TextMeshPro tags. The file reloads while the game runs. A full example (Old Norse phases with pronunciations) ships next to the DLL as `FriendlyClock.phases.md`; copy it to `BepInEx/config/` to use it. Excerpt:
+Create `BepInEx/config/FriendlyClock.phases.md` to replace `DayPhases`. Each `## ` heading is one phase, in order from midnight; the markdown under it shows as a tooltip when you hover the clock with the inventory, map or game menu open. Supports headings, **bold**, *italic*, lists, `>` quotes, `---` rules and raw TextMeshPro tags. The file reloads while the game runs. A full example (Old Norse phases with pronunciations) ships next to the DLL as `FriendlyClock.phases.md`; copy it to `BepInEx/config/` to use it. Excerpt:
 
 ```markdown
 ## Ótta

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.2
+
+- Fix the phase tooltip flickering on some entries (its indents were sized from its own width).
+- Tooltip also shows while the game menu (Esc) is open.
+- `---` in the phase file now draws a full-width line.
+
 ## 1.1.1
 
 - Fix the clock falling back to the drawn dial instead of the painted art after switching worlds.

@@ -19,7 +19,7 @@ namespace FriendlyClock
     {
         public const string PluginGuid = "com.mous.friendlyclock";
         public const string PluginName = "Friendly Clock";
-        public const string PluginVersion = "1.1.1";
+        public const string PluginVersion = "1.1.2";
 
         // Twelve two-hour phases from midnight; the dial draws one wedge per entry, so 00-06 and 18-24 are night.
         internal const string DefaultWords = "Midnight,Early Morning,Before Dawn,Dawn,Morning,Late Morning,Midday,Afternoon,Evening,Dusk,Night,Late Night";
@@ -44,6 +44,7 @@ namespace FriendlyClock
         private RectTransform _root;
         private RectTransform _tip;
         private TextMeshProUGUI _tipText;
+        private readonly List<Image> _rules = new List<Image>();
         private const float TipPadding = 10f;
         private DialGraphic _face;
         // Painted art dropped next to the DLL replaces the drawn part (index = DialGraphic.Part); reloaded live when the file changes.
@@ -72,7 +73,7 @@ namespace FriendlyClock
                 "Clock center on screen (0..1, x from left, y from bottom). Or open the inventory and drag the clock.");
             _words = Config.Bind("3 - Words", "DayPhases", DefaultWords,
                 "Comma-separated phase names spread evenly across the day, starting at midnight. The dial draws one segment per phase (12 = two hours each; use a count divisible by 4 so sunrise/sunset land on segment edges). " +
-                $"Ignored while BepInEx/config/{PhaseFileName} exists: there each '## Word' heading is a phase and the markdown below it shows on hover (inventory or map open).");
+                $"Ignored while BepInEx/config/{PhaseFileName} exists: there each '## Word' heading is a phase and the markdown below it shows on hover (inventory, map or game menu open).");
             _tipWidth = Config.Bind("4 - Tooltip", "MaxWidth", 380f,
                 new ConfigDescription($"Maximum width of the {PhaseFileName} hover tooltip.", new AcceptableValueRange<float>(150f, 1000f)));
             _tipFontSize = Config.Bind("4 - Tooltip", "FontSize", 18f,
@@ -118,7 +119,7 @@ namespace FriendlyClock
             _label.verticalAlignment = below ? VerticalAlignmentOptions.Top : VerticalAlignmentOptions.Middle;
 
             Drag(editing);
-            Tooltip(editing || Minimap.IsOpen() ? _fileTips?[phase] : null);
+            Tooltip(editing || Minimap.IsOpen() || Menu.IsVisible() ? _fileTips?[phase] : null);
         }
 
         // Shown while the cursor is free and over the clock; follows the mouse, opening away from the nearest screen edges.
@@ -143,18 +144,51 @@ namespace FriendlyClock
             if (!show) return;
 
             _tip.GetComponent<Image>().color = _tipBackground.Value;
-            if (_tipText.text != tip) _tipText.text = tip;
             _tipText.fontSize = _tipFontSize.Value;
             var max = _tipWidth.Value - 2f * TipPadding;
-            var w = Mathf.Min(max, _tipText.GetPreferredValues(tip, max, 0f).x);
-            var h = _tipText.GetPreferredValues(tip, w, 0f).y;
+            // Each rule is a blank line (a no-break space) with a drawn line laid over it after layout.
+            var shown = tip.Replace(RuleMark, " ");
+            var w = Mathf.Min(max, _tipText.GetPreferredValues(shown, max, 0f).x);
+            // Last GetPreferredValues call must be on the shown string: TMP builds the mesh from the string it last parsed.
+            var h = _tipText.GetPreferredValues(shown, w, 0f).y;
+            if (_tipText.text != shown) _tipText.text = shown;
             _tip.sizeDelta = new Vector2(w, h) + 2f * TipPadding * Vector2.one;
+            PlaceRules(tip);
 
             RectTransformUtility.ScreenPointToLocalPointInRectangle(_root, mouse, cam, out var local);
             var right = mouse.x < Screen.width * 0.5f;
             var up = mouse.y < Screen.height * 0.5f;
             _tip.pivot = new Vector2(right ? 0f : 1f, up ? 0f : 1f);
             _tip.anchoredPosition = local + new Vector2(right ? 16f : -16f, up ? 16f : -16f);
+        }
+
+        // One full-width line per RuleMark, centered on the line TMP laid its no-break space out on.
+        private void PlaceRules(string tip)
+        {
+            var marks = new HashSet<int>();
+            for (int i = tip.IndexOf(RuleMark, StringComparison.Ordinal), k = 0; i >= 0; i = tip.IndexOf(RuleMark, i + 1, StringComparison.Ordinal), k++)
+                marks.Add(i - k * (RuleMark.Length - 1)); // index in the shown string, where each mark is one character
+            var used = 0;
+            if (marks.Count > 0)
+            {
+                _tipText.ForceMeshUpdate(); // layout for this frame's size, not last frame's
+                var info = _tipText.textInfo;
+                var rect = _tipText.rectTransform.rect;
+                for (var i = 0; i < info.characterCount; i++)
+                {
+                    if (!marks.Contains(info.characterInfo[i].index)) continue;
+                    var line = info.lineInfo[info.characterInfo[i].lineNumber];
+                    if (used == _rules.Count) _rules.Add(Child<Image>("Rule", _tipText.transform));
+                    var rule = _rules[used++];
+                    rule.gameObject.SetActive(true);
+                    rule.color = new Color(0.54f, 0.51f, 0.45f, 0.9f);
+                    var rt = rule.rectTransform;
+                    rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
+                    rt.sizeDelta = new Vector2(rect.width, 2f);
+                    rt.anchoredPosition = new Vector2(rect.center.x, (line.ascender + line.descender) * 0.5f);
+                }
+            }
+            for (var i = used; i < _rules.Count; i++) _rules[i].gameObject.SetActive(false);
         }
 
         // The drawn glyphs (plus a small margin), not the fixed 240x60 label box, so pins next to a words-only clock stay reachable.
@@ -221,6 +255,9 @@ namespace FriendlyClock
 
         private static readonly int[] HeadingSizes = { 150, 130, 115 };
 
+        // A --- line; drawn as a full-width line once the tooltip is laid out (PlaceRules).
+        internal const string RuleMark = "\u001Frule\u001F";
+
         // Markdown subset -> TMP rich text: # headings, **bold**, *italic*/_italic_, ~~strike~~, - lists, > quotes, --- rules.
         // TMP tags written directly in the file pass through untouched.
         internal static string MarkdownToTmp(string md)
@@ -231,19 +268,19 @@ namespace FriendlyClock
                 var line = raw.Trim();
                 var quote = false;
                 while (line.StartsWith(">")) { quote = true; line = line.Substring(1).TrimStart(); }
-                var indent = quote ? 5 : 0;
+                var indent = quote ? 1 : 0; // em, not %: TMP takes % of the current rect width, which the tooltip sizes from the text
 
                 Match m;
                 if ((m = Regex.Match(line, @"^(#{1,6})\s+(.*)$")).Success)
                     line = $"<size={(m.Groups[1].Length <= 3 ? HeadingSizes[m.Groups[1].Length - 1] : 100)}%><b>{Inline(m.Groups[2].Value)}</b></size>";
                 else if (Regex.IsMatch(line, @"^([-*_])( *\1){2,}$"))
-                    line = "<align=center><color=#FFFFFF80>— — —</color></align>";
+                    line = RuleMark;
                 else if ((m = Regex.Match(line, @"^[-*+]\s+(.*)$")).Success)
-                    line = $"<indent={indent}%>•<indent={indent + 5}%>{Inline(m.Groups[1].Value)}</indent>"; // hanging indent
+                    line = $"<indent={indent}em>•<indent={indent + 1}em>{Inline(m.Groups[1].Value)}</indent>"; // hanging indent
                 else
-                    line = indent > 0 ? $"<indent={indent}%>{Inline(line)}</indent>" : Inline(line);
+                    line = indent > 0 ? $"<indent={indent}em>{Inline(line)}</indent>" : Inline(line);
 
-                lines.Add(quote ? $"<color=#F2E0B3>{line}</color>" : line);
+                lines.Add(quote && line != RuleMark ? $"<color=#F2E0B3>{line}</color>" : line);
             }
             return string.Join("\n", lines).Trim('\n');
         }
@@ -294,6 +331,7 @@ namespace FriendlyClock
             tipGroup.blocksRaycasts = false;
             tip.GetComponent<Image>().raycastTarget = false;
             _tipText = Child<TextMeshProUGUI>("Text", _tip);
+            _rules.Clear(); // the old ones died with the previous world's HUD
             _tipText.rectTransform.offsetMin = Vector2.one * TipPadding;
             _tipText.rectTransform.offsetMax = -Vector2.one * TipPadding;
             _tipText.font = vanilla.font;
