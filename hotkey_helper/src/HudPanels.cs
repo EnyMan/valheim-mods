@@ -36,7 +36,10 @@ namespace HotkeyHelper
         {
             var contexts = ActiveContexts(__instance);
             bool gamepad = ZInput.IsGamepadActive();
-            string key = contexts == null || !HotkeyHelperPlugin.Enabled.Value || AllHotkeysOverlay.Visible
+            // Inventory/chest/crafting: the crafting panel covers the right-middle, so dock bottom-right and grow upward.
+            bool inventory = contexts != null && contexts.Contains("inventory");
+            bool wanted = inventory ? HotkeyHelperPlugin.ShowInventoryColumn.Value : HotkeyHelperPlugin.ShowColumn.Value;
+            string key = contexts == null || !HotkeyHelperPlugin.Enabled.Value || !wanted || AllHotkeysOverlay.Visible
                 ? null
                 : string.Join(",", contexts) + gamepad;
             if (key == _lastKey && !HotkeyScanner.Dirty) return;
@@ -54,8 +57,6 @@ namespace HotkeyHelper
             }
             if (!_root && !Create()) return;
 
-            // Inventory/chest/crafting: the crafting panel covers the right-middle, so dock bottom-right and grow upward.
-            bool inventory = contexts.Contains("inventory");
             var rt = (RectTransform)_root.transform;
             rt.pivot = inventory ? new Vector2(1f, 0f) : new Vector2(1f, 0.5f);
             rt.anchorMin = rt.anchorMax = (inventory ? HotkeyHelperPlugin.InventoryColumnPosition : HotkeyHelperPlugin.ColumnPosition).Value;
@@ -100,11 +101,11 @@ namespace HotkeyHelper
         }
     }
 
-    /// <summary>Hold-to-show list of every mod hotkey, two columns, grouped by mod.</summary>
+    /// <summary>Hold-to-show list of every mod hotkey in OverlayColumns columns, grouped by mod.</summary>
     internal static class AllHotkeysOverlay
     {
         private static GameObject _root;
-        private static TextMeshProUGUI _left, _right;
+        private static readonly List<TextMeshProUGUI> _columns = new List<TextMeshProUGUI>();
 
         public static bool Visible => _root && _root.activeSelf;
 
@@ -118,6 +119,20 @@ namespace HotkeyHelper
             if (Visible || (!_root && !Create())) return;
             HotkeyScanner.ResolveAll();
 
+            var size = HotkeyHelperPlugin.OverlaySize.Value;
+            var w = Mathf.Clamp(size.x, 0.2f, 1f) / 2f;
+            var h = Mathf.Clamp(size.y, 0.2f, 1f) / 2f;
+            var rt = (RectTransform)_root.transform;
+            rt.anchorMin = new Vector2(0.5f - w, 0.5f - h);
+            rt.anchorMax = new Vector2(0.5f + w, 0.5f + h);
+            var count = HotkeyHelperPlugin.OverlayColumns.Value;
+            while (_columns.Count < count) _columns.Add(Column(rt, _columns[0].font));
+            for (var i = 0; i < _columns.Count; i++)
+            {
+                _columns[i].gameObject.SetActive(i < count);
+                Place(_columns[i].rectTransform, (float)i / count, (float)(i + 1) / count, top: 70, bottom: 24, fromTop: false);
+            }
+
             var hotkeys = HotkeyScanner.Visible(ZInput.IsGamepadActive()).ToList();
             var keyWidthEm = hotkeys.Count == 0 ? 4f : hotkeys.Max(h => h.KeyText.Length) * 0.6f + 1f;
             var groups = hotkeys.GroupBy(h => h.PluginName).Select(g =>
@@ -126,32 +141,44 @@ namespace HotkeyHelper
                     .Concat(new[] { "" })
                     .ToList()).ToList();
 
-            // Greedy split: whole groups go left until about half the lines are used.
-            int total = groups.Sum(g => g.Count), used = 0;
-            var left = new List<string>();
-            var right = new List<string>();
-            foreach (var g in groups)
-            {
-                if (right.Count == 0 && used + g.Count / 2 <= total / 2) { left.AddRange(g); used += g.Count; }
-                else right.AddRange(g);
-            }
-            _left.text = hotkeys.Count == 0 ? "No mod hotkeys found." : string.Join("\n", left);
-            _right.text = string.Join("\n", right);
+            var lines = new List<string>[count];
+            for (var i = 0; i < count; i++) lines[i] = new List<string>();
+            var split = SplitColumns(groups.Select(g => g.Count).ToArray(), count);
+            for (var i = 0; i < groups.Count; i++) lines[split[i]].AddRange(groups[i]);
+            if (hotkeys.Count == 0) lines[0].Add("No mod hotkeys found.");
+            for (var i = 0; i < count; i++) _columns[i].text = string.Join("\n", lines[i]);
 
             _root.SetActive(true);
-            // Autosize each column, then use the smaller size for both so they match.
-            foreach (var t in new[] { _left, _right })
+            // Autosize each column, then use the smallest size for all so they match.
+            var shown = _columns.Take(count).ToList();
+            foreach (var t in shown)
             {
                 t.enableAutoSizing = true;
                 t.fontSizeMax = HotkeyHelperPlugin.OverlayFontSize.Value;
                 t.ForceMeshUpdate();
             }
-            var size = Mathf.Min(_left.fontSize, _right.text == "" ? _left.fontSize : _right.fontSize);
-            foreach (var t in new[] { _left, _right })
+            var font = shown.Where(t => t.text != "").Select(t => t.fontSize).DefaultIfEmpty(HotkeyHelperPlugin.OverlayFontSize.Value).Min();
+            foreach (var t in shown)
             {
                 t.enableAutoSizing = false;
-                t.fontSize = size;
+                t.fontSize = font;
             }
+        }
+
+        // Column index per group: whole groups, in order, each column taking about an even share of the lines.
+        internal static int[] SplitColumns(int[] groupLines, int columns)
+        {
+            var result = new int[groupLines.Length];
+            float share = (float)groupLines.Sum() / columns;
+            int col = 0, used = 0;
+            for (var i = 0; i < groupLines.Length; i++)
+            {
+                // Next column once this group would mostly land past the current column's share.
+                if (col < columns - 1 && used > 0 && used + groupLines[i] / 2f > share * (col + 1)) col++;
+                result[i] = col;
+                used += groupLines[i];
+            }
+            return result;
         }
 
         private static bool Create()
@@ -161,8 +188,6 @@ namespace HotkeyHelper
             _root = new GameObject("HotkeyHelperOverlay", typeof(RectTransform), typeof(Image));
             var rt = (RectTransform)_root.transform;
             rt.SetParent(Hud.instance.m_rootObject.transform, false);
-            rt.anchorMin = new Vector2(0.12f, 0.08f);
-            rt.anchorMax = new Vector2(0.88f, 0.92f);
             rt.offsetMin = rt.offsetMax = Vector2.zero;
             _root.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.85f);
 
@@ -172,18 +197,17 @@ namespace HotkeyHelper
             title.color = new Color(1f, 0.82f, 0.45f);
             Place(title.rectTransform, 0f, 1f, top: 16, bottom: -60, fromTop: true);
 
-            _left = Column(rt, font, 0f, 0.5f);
-            _right = Column(rt, font, 0.5f, 1f);
+            _columns.Clear(); // the old ones died with the previous world's HUD
+            _columns.Add(Column(rt, font));
             _root.SetActive(false);
             return true;
         }
 
-        private static TextMeshProUGUI Column(RectTransform parent, TMP_FontAsset font, float xMin, float xMax)
+        private static TextMeshProUGUI Column(RectTransform parent, TMP_FontAsset font)
         {
             var t = Ui.Text(parent, font);
             t.fontSizeMin = 10;
             t.overflowMode = TextOverflowModes.Truncate;
-            Place(t.rectTransform, xMin, xMax, top: 70, bottom: 24, fromTop: false);
             return t;
         }
 

@@ -25,9 +25,11 @@ Anything it can't place only appears in the Alt+H list.
 ## Configuration
 `BepInEx/config/com.mous.hotkeyhelper.cfg` (or in-game with ConfigurationManager):
 
-- `Enabled`, `MaxRows`, `ShowAllKey`
+- `Enabled` (master switch), `MaxRows`, `ShowAllKey`
+- `ShowColumn` / `ShowInventoryColumn` — turn the side column off while playing, or only while inventory, chest or crafting is open (Alt+H keeps working)
 - `ColumnPosition` (while building/fighting) and `InventoryColumnPosition` (while inventory, chest or crafting is open) — screen fractions, 0..1
 - `ColumnFontSize`, `OverlayFontSize`
+- `OverlayColumns` (1–4) and `OverlaySize` (width, height as screen fractions) for the Alt+H list
 - For every discovered hotkey there is an entry under `Hotkeys - <Mod name>`:
   - `auto` (default) – use the guess (shown in the entry's description)
   - `hidden` – never show
